@@ -67,16 +67,14 @@ def webhook():
         event_data = None
         
         if event_type == 'push':
-            logger.info("Processing push event.")
             event_data = process_push_event(payload)
-        elif event_type == 'pull_request':
-            logger.info("Processing pull_request event.")
-            event_data = process_pull_request_event(payload)
+
         elif event_type == 'pull_request' and payload.get('action') == 'closed' and payload.get('pull_request', {}).get('merged'):
-            logger.info("Processing merge event.")
             event_data = process_merge_event(payload)
-        else:
-            logger.info(f"Event type {event_type} not handled specifically.")
+
+        elif event_type == 'pull_request':
+            event_data = process_pull_request_event(payload)
+
         
         if event_data:
             # Store in MongoDB
@@ -167,31 +165,34 @@ def process_merge_event(payload):
 
 @app.route('/api/events')
 def get_events():
-    """API endpoint to get latest events"""
     try:
         logger.info("Fetching latest events from the database.")
-        # Get latest 10 events, sorted by timestamp descending
-        fifteen_seconds_ago = datetime.utcnow() - timedelta(seconds=15)
-        logger.info(f"Filtering events from: {fifteen_seconds_ago} (UTC)")
+
         events = list(
-            collection.find({'timestamp': {'$gte': fifteen_seconds_ago}})
+            collection.find()
             .sort('timestamp', -1)
+            .limit(10)
         )
+
         logger.info(f"Number of events fetched: {len(events)}")
+
         for event in events:
             event['_id'] = str(event['_id'])
-            # Convert UTC to IST for display
+
             if event.get('timestamp'):
                 utc_dt = event['timestamp']
                 if utc_dt.tzinfo is None:
                     utc_dt = pytz.utc.localize(utc_dt)
+
                 ist_dt = utc_dt.astimezone(pytz.timezone('Asia/Kolkata'))
                 event['timestamp'] = ist_dt.isoformat()
-        logger.info("Events processed and ready to return.")
+
         return jsonify(events)
+
     except Exception as e:
         logger.error(f"Error fetching events: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
 
 @app.route('/health')
 def health():
