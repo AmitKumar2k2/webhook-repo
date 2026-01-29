@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>GitHub Activity Monitor</title>
+
+<style>
+:root {
+    --bg: #f9fafb;
+    --card: #ffffff;
+    --text: #111827;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+
+    --blue: #2563eb;
+    --green: #16a34a;
+    --orange: #ea580c;
+    --red: #dc2626;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 24px;
+}
+
+.app {
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+header h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+}
+
+header p {
+    color: var(--muted);
+    font-size: 0.95rem;
+}
+
+.status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: var(--card);
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.status.connected .status-dot { background: var(--green); }
+.status.disconnected .status-dot { background: var(--red); }
+
+.card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.events {
+    list-style: none;
+}
+
+.event {
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s ease;
+}
+
+.event:last-child {
+    border-bottom: none;
+}
+
+.event:hover {
+    background: #f9fafb;
+}
+
+.event.push { border-left: 4px solid var(--blue); }
+.event.pull_request { border-left: 4px solid var(--orange); }
+.event.merge { border-left: 4px solid var(--green); }
+
+.event-message {
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
+.event-meta {
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+.author {
+    font-weight: 600;
+    color: var(--blue);
+}
+
+.branch {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: #f3f4f6;
+    padding: 2px 6px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+}
+
+.empty {
+    padding: 60px;
+    text-align: center;
+    color: var(--muted);
+}
+
+.spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid #e5e7eb;
+    border-top: 3px solid var(--blue);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 16px;
+}
+
+footer {
+    margin-top: 16px;
+    font-size: 0.85rem;
+    color: var(--muted);
+    text-align: right;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+@media (max-width: 600px) {
+    header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+}
+</style>
+</head>
+
+<body>
+<div class="app">
+
+    <header>
+        <div>
+            <h1>GitHub Activity</h1>
+            <p>Live repository event stream</p>
+        </div>
+
+        <div id="status" class="status disconnected">
+            <div class="status-dot"></div>
+            <span>Connecting</span>
+        </div>
+    </header>
+
+    <div class="card">
+        <ul id="events" class="events">
+            <li class="empty">
+                <div class="spinner"></div>
+                Loading events…
+            </li>
+        </ul>
+    </div>
+
+    <footer>
+        Updated every 15s • Last update: <span id="last-updated">—</span>
+    </footer>
+
+</div>
+
+<script>
+let isConnected = false;
+
+function updateStatus(connected) {
+    const el = document.getElementById("status");
+    const text = el.querySelector("span");
+
+    isConnected = connected;
+    el.className = "status " + (connected ? "connected" : "disconnected");
+    text.textContent = connected ? "Connected" : "Disconnected";
+}
+
+function formatTime(iso) {
+    return new Date(iso).toLocaleString();
+}
+
+function messageFor(event) {
+    const author = `<span class="author">${event.author}</span>`;
+    const time = formatTime(event.timestamp);
+
+    switch (event.action) {
+        case "push":
+            return `${author} pushed to <span class="branch">${event.to_branch}</span>`;
+        case "pull_request":
+            return `${author} opened a PR from <span class="branch">${event.from_branch}</span> → <span class="branch">${event.to_branch}</span>`;
+        case "merge":
+            return `${author} merged <span class="branch">${event.from_branch}</span> into <span class="branch">${event.to_branch}</span>`;
+        default:
+            return `${author} performed ${event.action}`;
+    }
+}
+
+function render(events) {
+    const list = document.getElementById("events");
+
+    if (!events || events.length === 0) {
+        list.innerHTML = `
+            <li class="empty">
+                <p>No activity yet</p>
+            </li>`;
+        return;
+    }
+
+    list.innerHTML = events.map(e => `
+        <li class="event ${e.action}">
+            <div class="event-message">${messageFor(e)}</div>
+            <div class="event-meta">${formatTime(e.timestamp)}</div>
+        </li>
+    `).join("");
+}
+
+async function fetchEvents() {
+    try {
+        const res = await fetch("/api/events");
+        if (!res.ok) throw new Error(res.status);
+
+        const data = await res.json();
+        render(data);
+        updateStatus(true);
+
+        document.getElementById("last-updated").textContent =
+            new Date().toLocaleTimeString();
+    } catch (err) {
+        console.error(err);
+        updateStatus(false);
+    }
+}
+
+fetchEvents();
+setInterval(fetchEvents, 15000);
+</script>
+
+</body>
+</html>
